@@ -1,0 +1,208 @@
+﻿
+@{
+    ViewBag.Title = "SignalR服务端";
+}
+<link href="~/Content/index.css" rel="stylesheet" />
+
+<h2>SignalR服务端（5s刷新一次用户列表）</h2>
+<hr />
+<div class="container">
+    <span style="color: red;font-weight: bold" id="err"></span>
+    <div class="row">
+        <div class="col-md-6 col-sm-6 col-lg-6">
+            <input type="text" id="message" style="width: 300px" />
+            <input type="button" id="send_system_message" value="发送系统消息" />
+            <hr />
+            <div class="col-md-6">
+                <div class="row">
+                    <input type="text" id="user_id" style="width: 300px" placeholder="用户ID" />
+                </div>
+                <br />
+                <div class="row">
+                    <textarea rows="4" id="message_text" placeholder="消息内容" style="width: 300px; max-height: 100px;min-height: 30px"></textarea>
+                </div>
+                <br />
+                <div class="row">
+                    <input type="button" id="send_message" value="发送消息给指定用户" />
+                    <input type="button" id="reset_text" onclick="reset_text()" value="重置" />
+                </div>
+            </div>
+
+        </div>
+        <div class="col-md-6 col-sm-6 col-lg-6">
+            <h4 style="font-weight: bold">服务器日志：</h4>
+            <ul id="discussion" style="max-height: 180px;overflow-y: scroll"></ul>
+        </div>
+    </div>
+    <div class="row">
+        <h3>服务器列表</h3>
+        <ul id="system-list"></ul>
+    </div>
+    <hr />
+    <div class="row">
+        <h3>登陆用户列表</h3>
+        <ol id="u-user-list" class="user-list"></ol>
+    </div>
+    <hr />
+    <div class="row">
+        <h3>访客用户列表</h3>
+        <ol id="t-user-list" class="user-list"></ol>
+    </div>
+    <hr />
+    <div class="row">
+        <h3>未知用户列表</h3>
+        <ol id="o-user-list" class="user-list"></ol>
+    </div>
+</div>
+
+@section scripts{
+    <!--引用SignalR库. -->
+    <script src="~/Scripts/jquery.signalR-2.2.3.min.js"></script>
+    <!--引用自动生成的SignalR 集线器(Hub)脚本.在运行的时候在浏览器的Source下可看到 -->
+    <!--web服务-->
+    <script src="/signalr/hubs"></script>
+
+    <script type="text/javascript">
+        $(function () {
+            // 引用自动生成的集线器代理
+            var chat = $.connection.ChatsHub;
+            $.connection.hub.url = '/signalr/hubs';
+
+            var userId = new Date().getTime();
+            //自定义用户ID
+            $.connection.hub.qs = { "userId": "S_" + userId };
+
+            //启用浏览器端输出日志
+            $.connection.hub.logging = true;
+
+            //// 定义服务器端调用的客户端SendMessage来显示新消息
+            //chat.client.BroadcastMessageFormAllOnlineUser = function (req) {
+            //    // 向页面添加消息
+            //    $('#discussion').append('<li><strong>' + htmlEncode(req.SendId) + '</strong>: ' + htmlEncode(req.Content) + '</li>');
+            //};
+            //// 设置焦点到输入框
+            //$('#message').focus();
+
+            //接受服务端消息，此处做演示，正式使用的时候服务端是不需要接受自己的消息
+            chat.client.BroadcastSystemMessage = function (title, msg) {
+                $('#discussion').append('<li><span style="color:green"><span style="font-weight: bold">' + title + '</span>&nbsp;&nbsp;' + msg + '</span></li>');
+            }
+            chat.client.BroadcastMessageByUserId = function (msg) {
+                $('#discussion').append('<li><span style="font-weight: bold;">收到消息&nbsp;&nbsp;</span><span>' + msg +'</span></li>');
+            }
+
+            //错误
+            $.connection.hub.error(function (err) {
+                //console.log("SignalR出现错误. \n" + "Error: " + err.message);
+                $('#discussion').append('<li><span style="color:red;font-weight: bold">SignalR出现错误：' + err.message + '</span></li>');
+            });
+
+            // 开始连接服务器
+            $.connection.hub.start().done(function () {
+                //注册发送系统消息方法
+                $('#send_system_message').click(function () {
+                    var msg = $('#message').val();
+                    if (msg != "") {
+                        $('#err').empty();
+
+                        //// 调用服务器端集线器的Send方法
+                        //chat.server.send(msg).fail(function (e) {
+                        //    if (e.source === 'HubException') {
+                        //        console.log("异常信息：" + e.message + "，用户名：" + e.data.userName + "，错误描述：" + e.data.message);
+                        //    }
+                        //});
+
+                        chat.server.sendSystemMsg(msg).fail(function (e) {
+                            if (e.source === 'HubException') {
+                                //console.log("异常信息：" + e.message + "，用户名：" + e.data.userName + "，错误描述：" + e.data.message);
+                                $('#discussion').append('<li><span style="color:red;font-weight: bold">SignalR出现异常：' + e.data.message + '</span></li>');
+                            }
+                        });
+                    } else {
+                        $('#err').html("消息不能为空！");
+                    }
+
+                    // 清空输入框信息并获取焦点
+                    $('#message').val('').focus();
+                });
+
+                //注册给指定用户发送消息
+                $('#send_message').click(function () {
+                    var msg = $('#message_text').val();
+                    var userId = $('#user_id').val();
+                    if (msg != "" && userId != "") {
+                        $('#err').empty();
+
+                        chat.server.sendmMsgByUserId(userId, msg).fail(function (e) {
+                            if (e.source === 'HubException') {
+                                //console.log("异常信息：" + e.message + "，用户名：" + e.data.userName + "，错误描述：" + e.data.message);
+                                $('#discussion').append('<li><span style="color:red;font-weight: bold">SignalR出现异常：' + e.data.message + '</span></li>');
+                            }
+                        });
+                    } else {
+                        $('#err').html("消息或者用户ID不能为空！");
+                    }
+
+                    // 清空输入框信息并获取焦点
+                    $('#message_text').val('').focus();
+                });
+            });
+        });
+
+        setInterval(LoadUserList, 5000);
+
+        //加载用户列表
+        function LoadUserList() {
+            $.ajax({
+                url: "/Home/LoadUserInfo", //请求的url地址
+                dataType: "json", //返回格式为json
+                async: true, //请求是否异步，默认为异步，这也是ajax重要特性
+                type: "GET", //请求方式
+                beforeSend: function () {
+                    //请求前的处理
+                },
+                success: function (req) {
+                    //console.log("刷新用户列表")
+                    
+                    //$('#discussion').append('<li><span style="color:gray">刷新用户列表  ' + new Date() + '</span></li>');
+
+                    //请求成功时处理
+                    var html_u = '';//登陆用户
+                    var html_t = '';//访客用户
+                    var html_o = '';//未知用户
+                    var html_s = '';//系统用户
+                    $.each(req, function (item) {
+                        if (item.indexOf("U_") > -1) {
+                            //<input type='checkbox' name='user-check' value='" + req[item] +"'/>
+                            html_u += "<li><span>登陆用户Id：" + item + "，连接Id：" + req[item] + "</span></li>"
+                        } else if (item.indexOf("T_") > -1) {
+                            html_t += "<li><span>访客用户Id：" + item + "，连接Id：" + req[item] + "</span></li>"
+                        } else if (item.indexOf("S_") > -1) {
+                            html_s += "<li><span>服务器用户Id：" + item + "，连接Id：" + req[item] + "</span></li>"
+                        } else {
+                            html_o += "<li><span>未知用户Id：" + item + "，连接Id：" + req[item] + "</span></li>"
+                        }
+                    });
+                    $('#u-user-list').html(html_u);
+                    $('#t-user-list').html(html_t);
+                    $('#o-user-list').html(html_o);
+                    $('#system-list').html(html_s);
+                },
+                complete: function () {
+                    //请求完成的处理
+                },
+                error: function () {
+                    //请求出错处理
+                }
+            });
+        }
+
+        //重置消息框
+        function reset_text() {
+            $('#user_id').val('');
+            $('#message_text').val('');
+
+            $('#user_id').focus();
+        }
+    </script>
+}
